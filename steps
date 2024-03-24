@@ -1,0 +1,36 @@
+TODO: 
+1. Setup of express : DONE
+2. MongoDB Connection : DONE
+3. Set the EJS to express view engine: DONE
+
+
+4. register Page
+5. Register Api
+
+6. Login Page
+7. Login Api
+
+8. Session base Authentication
+
+9. Dashboard Page (Todo Page)
+
+10. Logout
+
+11. logout from all devices
+
+12. Create CRUD API'Set
+    a. create
+    b. read
+    c. edit
+    d. delete
+
+13. Dashboard Client Api calls
+    a. axios create
+    b. axios read
+    c. axios edit
+    d. axios delete
+
+14. Pagination Api to send data in chunks
+15. Rate Limiting (Calls from a particular client)
+
+16. JWT email based Authentication
