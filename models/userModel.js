@@ -18,6 +18,6 @@ const userSchema = new mongoose.Schema({
         type:String,
         required:true
     }
-})
+},)
 // console.log("mySchema", userSchema)
 module.exports = mongoose.model("user", userSchema);

@@ -2,14 +2,11 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 require("dotenv").config(); // Load environment variables from .env file
-// Helper functions import
-const validateUserData = require("./functions/validateUserData");
-const userModel = require("./models/userModel");
-const regexEmail = require("./functions/regexEmail");
-// Constant variables for backend
+
+//! Constant variables for backend
+
 const app = express(); // Initializes server
 const session = require("express-session");
-const { isAuth } = require("./middlewares/authMiddleware");
 const mongoDbSession = require("connect-mongodb-session")(session);
 const port = process.env.PORT || 8000;
 const mongoURI = process.env.MONGO_URI;
@@ -17,6 +14,14 @@ const storeLocation = new mongoDbSession({ // where to store
   uri: mongoURI,
   collection: "sessions"
 })
+
+//! Helper functions import
+
+const validateUserData = require("./functions/validateUserData");
+const userModel = require("./models/userModel");
+const regexEmail = require("./functions/regexEmail");
+const { isAuth } = require("./middlewares/authMiddleware");
+const todoModel = require("./models/todoModel");
 
 // ? MiddleWares =>
 app.use(express.urlencoded({ extended: true }));
@@ -186,7 +191,8 @@ app.post("/login", async(req, res)=>{
     //  storing some user info with the session as well so we can track which user has been looged in
     console.log("req session after: ", req.session)
     console.log("session id: (sid): ", req.session.id)
-    return res.send("User logged in successfully!");
+    // return res.send("User logged in successfully!");
+    return res.redirect("/dashboard");
   } catch (e){
     console.error(e);
     res.status(500).json({
@@ -198,10 +204,187 @@ app.post("/login", async(req, res)=>{
   
 })
 
-app.get("/testing", isAuth, (req, res)=>{
-  return res.send("Testing session")
-})
-
+//! Handling DASHBOARD
 app.get("/dashboard", isAuth, (req, res)=>{
   return res.render("dashboardPage")
+})
+
+//! Handling LOGOUT
+app.post("/logout", isAuth, (req, res)=>{
+  console.log(req.session)
+  // it will navigate to the session and delete it, moreover it will unset the req.session property
+  req.session.destroy((err)=>{
+    if (err) return res.status(500).json({
+      err: err,
+      message: "Error ocurred from database while trying to logout. Please try again."
+    })
+    console.log(req.session)
+    return res.redirect("/login");
+  }) 
+})
+
+// app.post("/logout_from_all_devices", isAuth, async(req, res) => {
+//   // console.log(req.session.user.email);
+//   let email = req.session.user.email;
+//   // we did not make a model for sessions collection just yet so we create a temporrary schema
+//   // createing schema
+//   const sessionSchema = new mongoose.Schema(
+//     {
+//       _id: String,
+//     },
+//     {
+//       strict: false,
+//     }
+//   );
+//   //  converting into model
+//   const sessionModel = mongoose.model("session", sessionSchema);
+//   try{
+//     const deletedDb = await sessionModel.deleteMany({
+//       "session.user.email": email, // schema: client 
+//     })
+//     console.log("DB data deleted: ", deletedDb)
+//     return res.send("Succesfully logged out from all devices");
+//   } catch(err){
+//     console.log(err)
+//     res.status(500).json({
+//       message: "error ocured logging out from all devices",
+//       err: err
+//     })
+//   }
+  
+// });
+const sessionModel = mongoose.model(
+  "session",
+  new mongoose.Schema(
+    { _id: String, },
+    {strict: false,}
+  )
+);
+// Defin e your route handler
+app.post("/logout_from_all_devices", isAuth, async (req, res) => {
+  let email = req.session.user.email;
+  try {
+    const deletedDb = await sessionModel.deleteMany({
+      "session.user.email": email, // Assuming your schema structure is correct
+    });
+    console.log("DB data deleted: ", deletedDb);
+    return res.send("Successfully logged out from all devices");
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({
+      message: "Error occurred logging out from all devices",
+      err: err,
+    });
+  }
+});
+
+//! Handling TODOs
+app.post('/create-todo', isAuth, async (req, res)=>{
+  const {title, description} = req.body;
+  const username = req.session.user.username;
+  const userId = req.session.user.userId;
+  // ? Validating data
+  if(!title){
+    return res.status(403).json({
+      status: 403,
+      message: "Missing title, please check and try again"
+    })
+  }
+  // if(!description)
+  //   return res.status(403).json({
+  //     status: 403,
+  //     message: "Missing description, please check and try again"
+  //   })
+  if(typeof title !== 'string'){
+    return res.status(403).json({
+      status: 403,
+      message: "Invalid title type, Title is not a string, please check and try again"
+    })
+  }
+
+  if(title.length < 3){
+    return res.status(403).json({
+      status: 403,
+      message: "Invalid title length, Title should be at least 3 characters long, please check and try again"
+    })
+  }
+
+  if(title.length > 100){
+    return res.status(403).json({
+      status: 403,
+      message: "Invalid title length, Title should be at most 100 characters long, please check and try again"
+    })
+  }
+
+  if(description && description.length > 1000){
+    return res.status(403).json({
+      status: 403,
+      message: "Invalid description length, Description should be at most 1000 characters long, please check and try again"
+    })
+  }
+
+  const todoObj = new todoModel({
+    title: title,
+    description: description,
+    username: username,
+    userId: userId
+  })
+  // console.log(todoObj)
+  try{
+    const todoDoc = await todoObj.save()
+    return res.status(201).json({
+      status: 201,
+      message: "todo created successfully",
+      data: todoDoc
+    })
+  }catch(err){
+    console.error(err);
+    return res.status(500).json({
+      status: 500,
+      message: "Internal Server error. DB error",
+      err: err
+    })
+  }
+  // return res.send("todo created successfully")
+})
+
+app.get('/read-todos', isAuth, async(req, res) =>{
+  const username = req.session.user.username;
+  try{ 
+    const todos = await todoModel.find({username})
+    console.log(todos)
+    return res.status(200).json({
+      status: 200,
+      message: `todos fetched successfully for ${username}`,
+      data: todos
+    })
+  }catch(err){
+    console.error(err);
+    return res.status(500).json({
+      status: 500,
+      message: "Internal Server error. DB error",
+      err: err
+    })
+  }
+})
+
+app.post('/edit-todo', isAuth, async(req, res)=>{
+  //  to edit we need the todo id, newTitle and newDesc
+  const {todoId, newTitle, newDesc} = req.body;
+  const username = req.session.user.username;
+  console.log("todoId: ", todoId);
+  console.log("newTitle: ", newTitle);
+  console.log("newDesc: ", newDesc);
+  try{
+    const todoDoc = await todoModel.findOne({_id: todoId});
+    console.log(todoDoc);
+    return res.send("todo found");
+  }catch (error){
+    console.error(error);
+    return res.status(500).json({
+      status: 500,
+      message: "Internal Server error. DB error",
+      err: error
+    })
+  }
 })
