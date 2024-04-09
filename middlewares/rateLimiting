@@ -1,0 +1,11 @@
+const rateLimiting = (req, res, next)=>{
+    if(req.session.reqTime == "first"){
+        req.session.reqTime = Date.now();
+    }
+    req.session.reqTime = new Date.now();
+    console.log("req time: ", req.session.reqTime)
+    next();
+    return;
+}
+
+module.exports = rateLimiting;

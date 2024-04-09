@@ -22,6 +22,8 @@ const userModel = require("./models/userModel");
 const regexEmail = require("./functions/regexEmail");
 const { isAuth } = require("./middlewares/authMiddleware");
 const todoModel = require("./models/todoModel");
+const validateTodoData = require("./functions/validateTodoData");
+const rateLimiting = require("./middlewares/rateLimiting");
 
 // ? MiddleWares =>
 app.use(express.urlencoded({ extended: true }));
@@ -183,6 +185,7 @@ app.post("/login", async(req, res)=>{
     //! a.) firstly E-S creates the session document in the sessions collection, then it creates an isAuth keyin the document and sets its value to true.
     //!  b.) Secondly E-S takes the _id generated from the creation of session document, and transfers it in to client sides browsers cookie as "connect.sid". The connect.sid stored in the cookie on Client side is encrypted usinf SESSION_SECRET
     req.session.isAuth = true;
+    req.session.reqTime = "first";
     req.session.user = {
       userId: userDoc._id,
       username: userDoc.username,
@@ -284,42 +287,13 @@ app.post('/create-todo', isAuth, async (req, res)=>{
   const username = req.session.user.username;
   const userId = req.session.user.userId;
   // ? Validating data
-  if(!title){
+  try{
+    await validateTodoData({title, description});
+  } catch (err){
     return res.status(403).json({
       status: 403,
-      message: "Missing title, please check and try again"
-    })
-  }
-  // if(!description)
-  //   return res.status(403).json({
-  //     status: 403,
-  //     message: "Missing description, please check and try again"
-  //   })
-  if(typeof title !== 'string'){
-    return res.status(403).json({
-      status: 403,
-      message: "Invalid title type, Title is not a string, please check and try again"
-    })
-  }
-
-  if(title.length < 3){
-    return res.status(403).json({
-      status: 403,
-      message: "Invalid title length, Title should be at least 3 characters long, please check and try again"
-    })
-  }
-
-  if(title.length > 100){
-    return res.status(403).json({
-      status: 403,
-      message: "Invalid title length, Title should be at most 100 characters long, please check and try again"
-    })
-  }
-
-  if(description && description.length > 1000){
-    return res.status(403).json({
-      status: 403,
-      message: "Invalid description length, Description should be at most 1000 characters long, please check and try again"
+      message: "Error Validating todo data entries",
+      err: err
     })
   }
 
@@ -348,11 +322,11 @@ app.post('/create-todo', isAuth, async (req, res)=>{
   // return res.send("todo created successfully")
 })
 
-app.get('/read-todos', isAuth, async(req, res) =>{
+app.get('/read-todos', isAuth,  async(req, res) =>{
   const username = req.session.user.username;
   try{ 
     const todos = await todoModel.find({username})
-    console.log(todos)
+    // console.log(todos)
     return res.status(200).json({
       status: 200,
       message: `todos fetched successfully for ${username}`,
@@ -368,23 +342,67 @@ app.get('/read-todos', isAuth, async(req, res) =>{
   }
 })
 
-app.post('/edit-todo', isAuth, async(req, res)=>{
+app.post("/edit-todo", isAuth, async (req, res) => {
   //  to edit we need the todo id, newTitle and newDesc
-  const {todoId, newTitle, newDesc} = req.body;
+  const { todoId, newTitle, newDesc } = req.body;
   const username = req.session.user.username;
-  console.log("todoId: ", todoId);
-  console.log("newTitle: ", newTitle);
-  console.log("newDesc: ", newDesc);
+  // TODO: Validate the new data
+  if(!todoId) {
+    return res.status(403).json({
+      status: 403,
+      message: "Missing todo Id, please check and try again"
+    })
+  }
+
   try{
-    const todoDoc = await todoModel.findOne({_id: todoId});
-    console.log(todoDoc);
-    return res.send("todo found");
-  }catch (error){
+    await validateTodoData({title: newTitle, description: newDesc});
+  } catch(err){
+    console.error(err);
+    return res.status(403).json({
+      status: 403,
+      message: "Error Validating todo data entries",
+      err: err
+    })
+  }
+  // TODO: Finding the relevent todo using the todo id
+  try {
+    const todoDoc = await todoModel.findOne({ _id: todoId });
+    // console.log(todoDoc);
+    // TODO: Compare the editor and owner userIds, if they dont match, edit is forbidden.
+    if(todoDoc == null){
+      return res.status(404).json({
+        status: 404,
+        message: "todo with the todo Id sent, was not found in database, please check todoId and try again",
+      });
+    }
+    if (username !== todoDoc.username) {
+      return res.status(403).json({
+        status: 403,
+        message: "You are not authorized (forbidden 403) to edit this todo",
+      });
+    }
+
+    // TODO: Update the todo with the new title and description
+    const prevTodo = await todoModel.findOneAndUpdate(
+      { _id: todoId },
+      { title: newTitle, description: newDesc }
+    );
+    return res.status(202).json({
+      status: 202,
+      message: "todo updated successfully",
+      data: prevTodo,
+    });
+  } catch (error) {
     console.error(error);
     return res.status(500).json({
       status: 500,
       message: "Internal Server error. DB error",
-      err: error
-    })
+      err: error,
+    });
   }
+});
+
+app.post("/delete-todo", isAuth, async(req, res)=>{
+  const { todoId } = req.body;
+  console.log(todoId);
 })
